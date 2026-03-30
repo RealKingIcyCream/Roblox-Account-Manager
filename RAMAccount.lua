@@ -42,7 +42,7 @@ local function POST(Method, Account, Body, ...)
     local Url = 'http://localhost:' .. WebserverSettings.Port .. '/' .. Method .. '?Account=' .. Account
 
     for Index, Parameter in pairs(Arguments) do
-        Url = '&' .. Url .. Parameter
+        Url = Url .. '&' .. Parameter
     end
 
     if WebserverSettings.Password and #WebserverSettings.Password >= 6 then
@@ -87,9 +87,9 @@ function Account:UnblockUser(Argument)
     if typeof(Argument) == 'string' then
         return GET('UnblockUser', self.Username, 'UserId=' .. Argument)
     elseif typeof(Argument) == 'Instance' and Argument:IsA'Player' then
-        return self:BlockUser(tostring(Argument.UserId))
+        return self:UnblockUser(tostring(Argument.UserId))
     elseif typeof(Argument) == 'number' then
-        return self:BlockUser(tostring(Argument))
+        return self:UnblockUser(tostring(Argument))
     end
 end
 function Account:GetBlockedList() return GET('GetBlockedList', self.Username) end
@@ -106,9 +106,9 @@ function Account:SetField(Field, Value) return GET('SetField', self.Username, 'F
 function Account:RemoveField(Field) return GET('RemoveField', self.Username, 'Field=' .. HttpService:UrlEncode(Field)) end
 
 function Account:SetServer(PlaceId, JobId) return GET('SetServer', self.Username, 'PlaceId=' .. PlaceId, 'JobId=' .. JobId) end
-function Account:SetRecommendedServer(PlaceId) return GET('SetServer', self.Username, 'PlaceId=' .. PlaceId) end
+function Account:SetRecommendedServer(PlaceId) return GET('SetRecommendedServer', self.Username, 'PlaceId=' .. PlaceId) end
 
-function Account:ImportCookie(Token) return GET('ImportCookie', 'Cookie=' .. Token) end
+function Account:ImportCookie(Token) return GET('ImportCookie', self.Username, 'Cookie=' .. Token) end
 function Account:GetCookie() return GET('GetCookie', self.Username) end
 function Account:LaunchAccount(PlaceId, JobId, FollowUser, JoinVip) -- if you want to follow someone, PlaceId must be their user id
     return GET('LaunchAccount', self.Username, 'PlaceId=' .. PlaceId, JobId and ('JobId=' .. JobId), FollowUser and 'FollowUser=true', JoinVip and 'JoinVIP=true')

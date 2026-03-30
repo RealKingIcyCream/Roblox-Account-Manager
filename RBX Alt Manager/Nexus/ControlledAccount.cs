@@ -58,16 +58,16 @@ namespace RBX_Alt_Manager.Nexus
 
             Logger.Info($"{Username} has connected");
 
-            new Task(() =>
+            Task.Run(async () =>
             {
                 if (!string.IsNullOrEmpty(AutoExecute))
                 {
                     while (!ClientCanReceive)
-                        Task.Delay(80);
+                        await Task.Delay(80);
 
                     SendMessage("execute " + AutoExecute);
                 }
-            }).Start();
+            });
         }
 
         public void Disconnect()
@@ -127,18 +127,16 @@ namespace RBX_Alt_Manager.Nexus
                     {
                         if (command.Payload.TryGetValue("Margin", out string Margins))
                         {
-                            int[] i = Margins.Split(',').Select(int.Parse).ToArray();
-
-                            if (i.Count() == 4)
-                                margin = new Padding(i[0], i[1], i[2], i[3]);
+                            string[] parts = Margins.Split(',');
+                            if (parts.Length == 4 && int.TryParse(parts[0], out int p0) && int.TryParse(parts[1], out int p1) && int.TryParse(parts[2], out int p2) && int.TryParse(parts[3], out int p3))
+                                margin = new Padding(p0, p1, p2, p3);
                         }
 
                         if (command.Payload.TryGetValue("Size", out string Size))
                         {
-                            int[] i = Size.Split(',').Select(int.Parse).ToArray();
-
-                            if (i.Count() == 2)
-                                size = new Size(i[0], i[1]);
+                            string[] parts = Size.Split(',');
+                            if (parts.Length == 2 && int.TryParse(parts[0], out int s0) && int.TryParse(parts[1], out int s1))
+                                size = new Size(s0, s1);
                         }
                     }
 
@@ -174,7 +172,15 @@ namespace RBX_Alt_Manager.Nexus
         {
             if (Status == AccountStatus.Offline) return;
 
-            Context.WebSocket.Send(Message);
+            try
+            {
+                if (Context?.WebSocket?.ReadyState == WebSocketState.Open)
+                    Context.WebSocket.Send(Message);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"SendMessage Error: {ex}");
+            }
         }
     }
 }

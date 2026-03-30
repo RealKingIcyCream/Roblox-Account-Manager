@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -32,10 +32,14 @@ namespace RBX_Alt_Manager
         {
             ThreadPool.QueueUserWorkItem((o) =>
             {
-                try
+                int errorCount = 0;
+                while (_listener.IsListening)
                 {
-                    while (_listener.IsListening)
+                    try
                     {
+                        var context = _listener.GetContext();
+                        errorCount = 0;
+
                         ThreadPool.QueueUserWorkItem((c) =>
                         {
                             var ctx = c as HttpListenerContext;
@@ -58,10 +62,17 @@ namespace RBX_Alt_Manager
                             {
                                 try { ctx.Response.OutputStream.Close(); } catch { } // couldn't find any good solution :( so i just wrapped it in a try-catch block ):
                             }
-                        }, _listener.GetContext());
+                        }, context);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (!_listener.IsListening) break;
+                        errorCount++;
+                        Program.Logger.Error($"WebServer listener error: {ex.Message}");
+                        int delay = Math.Min(30000, 100 * (int)Math.Pow(2, errorCount));
+                        Thread.Sleep(delay);
                     }
                 }
-                catch { }
             });
         }
 

@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RBX_Alt_Manager.Classes;
 using RBX_Alt_Manager.Forms;
@@ -181,9 +181,10 @@ namespace RBX_Alt_Manager
 
             if (response.IsSuccessful && response.StatusCode == HttpStatusCode.OK)
             {
-                JObject pinInfo = JObject.Parse(response.Content);
-
-                if (!pinInfo["isEnabled"].Value<bool>() || (pinInfo["unlockedUntil"].Type != JTokenType.Null && pinInfo["unlockedUntil"].Value<int>() > 0)) return true;
+                if (response.Content.TryParseJson(out JObject pinInfo) && pinInfo != null)
+                {
+                    if (!pinInfo["isEnabled"].Value<bool>() || (pinInfo["unlockedUntil"].Type != JTokenType.Null && pinInfo["unlockedUntil"].Value<int>() > 0)) return true;
+                }
             }
 
             if (!Internal) MessageBox.Show("Pin required!", "Account Manager", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -565,7 +566,7 @@ namespace RBX_Alt_Manager
                     }
                     else if (response.StatusCode == HttpStatusCode.Redirect) // thx wally (p.s. i hate wally)
                     {
-                        request = MakeRequest(string.Format("/games/{0}?privateServerLinkCode={1}", PlaceID, LinkCode), Method.Get).AddHeader("X-CSRF-TOKEN", Token).AddHeader("Referer", "https://www.roblox.com/games/4924922222/Brookhaven-RP");
+                        request = MakeRequest(string.Format("/games/{0}?privateServerLinkCode={1}", PlaceID, LinkCode), Method.Get).AddHeader("X-CSRF-TOKEN", Token).AddHeader("Referer", "https://www.roblox.com/");
 
                         RestResponse result = await AccountManager.Web13Client.ExecuteAsync(request);
 
@@ -582,7 +583,7 @@ namespace RBX_Alt_Manager
 
                 if (JoinVIP)
                 {
-                    var request = MakeRequest("/account/settings/private-server-invite-privacy").AddHeader("X-CSRF-TOKEN", Token).AddHeader("Referer", "https://www.roblox.com/my/account");
+                    var request = MakeRequest("/account/settings/private-server-invite-privacy").AddHeader("X-CSRF-TOKEN", Token).AddHeader("Referer", "https://www.roblox.com/");
 
                     RestResponse result = await AccountManager.MainClient.ExecuteAsync(request);
 
@@ -597,7 +598,7 @@ namespace RBX_Alt_Manager
                                 var setRequest = MakeRequest("/account/settings/private-server-invite-privacy", Method.Post);
 
                                 setRequest.AddHeader("X-CSRF-TOKEN", Token);
-                                setRequest.AddHeader("Referer", "https://www.roblox.com/my/account");
+                                setRequest.AddHeader("Referer", "https://www.roblox.com/");
                                 setRequest.AddHeader("Content-Type", "application/x-www-form-urlencoded");
 
                                 setRequest.AddParameter("PrivateServerInvitePrivacy", "AllUsers");
@@ -634,6 +635,8 @@ namespace RBX_Alt_Manager
                             Roblox.Arguments = string.Format("--app -t {0} -j \"https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestFollowUser&userId={1}\"", Ticket, PlaceID);
                         else
                             Roblox.Arguments = string.Format("--app -t {0} -j \"https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestGame{3}&placeId={1}{2}&isPlayTogetherGame=false\"", Ticket, PlaceID, "&gameId=" + JobID, string.IsNullOrEmpty(JobID) ? "" : "Job");
+
+                        Process.Start(Roblox);
                     });
 
                     _ = Task.Run(AdjustWindowPosition);
@@ -694,20 +697,25 @@ namespace RBX_Alt_Manager
 
                 foreach (var process in Process.GetProcessesByName("RobloxPlayerBeta").Reverse())
                 {
-                    if (process.MainWindowHandle == IntPtr.Zero) continue;
+                    try
+                    {
+                        if (Found || process.MainWindowHandle == IntPtr.Zero) continue;
 
-                    string CommandLine = process.GetCommandLine();
+                        string CommandLine = process.GetCommandLine();
 
-                    var TrackerMatch = Regex.Match(CommandLine, @"\-b (\d+)");
-                    string TrackerID = TrackerMatch.Success ? TrackerMatch.Groups[1].Value : string.Empty;
+                        var TrackerMatch = Regex.Match(CommandLine, @"\-b (\d+)");
+                        string TrackerID = TrackerMatch.Success ? TrackerMatch.Groups[1].Value : string.Empty;
 
-                    if (TrackerID != BrowserTrackerID) continue;
+                        if (TrackerID != BrowserTrackerID) continue;
 
-                    Found = true;
+                        Found = true;
 
-                    MoveWindow(process.MainWindowHandle, PosX, PosY, Width, Height, true);
-
-                    break;
+                        MoveWindow(process.MainWindowHandle, PosX, PosY, Width, Height, true);
+                    }
+                    finally
+                    {
+                        process.Dispose();
+                    }
                 }
 
                 if (Found) break;
@@ -732,7 +740,7 @@ namespace RBX_Alt_Manager
             if (response.StatusCode == HttpStatusCode.OK)
             {
                 Successful = true;
-                return Regex.IsMatch(response.Content, "\"joinScriptUrl\":[%s+]?null") ? response.Content : "Success";
+                return Regex.IsMatch(response.Content, "\"joinScriptUrl\"\\s*:\\s*null") ? response.Content : "Success";
             }
             else
                 return $"Failed {response.StatusCode}: {response.Content} {response.ErrorMessage}";
@@ -759,7 +767,12 @@ namespace RBX_Alt_Manager
             RestResponse dpResponse = AccountManager.UsersClient.Execute(dpRequest);
 
             if (dpResponse.StatusCode != HttpStatusCode.OK)
-                throw new Exception(JObject.Parse(dpResponse.Content)?["errors"]?[0]?["message"].Value<string>() ?? $"Something went wrong\n{dpResponse.StatusCode}: {dpResponse.Content}");
+            {
+                if (dpResponse.Content.TryParseJson(out JObject errObj) && errObj != null)
+                    throw new Exception(errObj["errors"]?[0]?["message"]?.Value<string>() ?? $"Something went wrong\n{dpResponse.StatusCode}: {dpResponse.Content}");
+                else
+                    throw new Exception($"Something went wrong\n{dpResponse.StatusCode}: {dpResponse.Content}");
+            }
         }
 
         public void SetAvatar(string AvatarJSONData)

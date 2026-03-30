@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -104,7 +104,7 @@ namespace RBX_Alt_Manager
         /// <param name="comment">A comment to display above the property.</param>
         public void Set(string name, string value, string comment = null)
         {
-            if (string.IsNullOrWhiteSpace(value))
+            if (value == null)
             {
                 RemoveProperty(name);
                 return;

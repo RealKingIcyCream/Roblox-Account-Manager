@@ -1,4 +1,4 @@
-﻿using BrightIdeasSoftware;
+using BrightIdeasSoftware;
 using Newtonsoft.Json;
 using RBX_Alt_Manager.Classes;
 using RBX_Alt_Manager.Nexus;
@@ -42,7 +42,7 @@ namespace RBX_Alt_Manager.Forms
         private bool SettingsLoaded;
 
         [DllImport("user32", EntryPoint = "SendMessageA", CharSet = CharSet.Ansi, SetLastError = true, ExactSpelling = true)]
-        private static extern int SendMessage(int hwnd, int wMsg, int wParam, int lParam);
+        private static extern int SendMessage(IntPtr hwnd, int wMsg, int wParam, int lParam);
 
         public AccountControl()
         {
@@ -84,7 +84,7 @@ namespace RBX_Alt_Manager.Forms
 
                     Accounts.RemoveAll(x => x.LinkedAccount == null);
                 }
-                catch { }
+                catch (Exception x) { Program.Logger.Error($"AccountControl LoadAccounts error: {x}"); }
             }
 
             AccountsView.SetObjects(Accounts);
@@ -112,7 +112,7 @@ namespace RBX_Alt_Manager.Forms
 
             Server.Start();
 
-            Process.GetCurrentProcess().WaitForExit();
+            Task.Delay(-1).Wait();
         }
 
         public void EmitMessage(string Message, bool ToAll = false)
@@ -158,7 +158,7 @@ namespace RBX_Alt_Manager.Forms
                 ForeColor = ThemeEditor.FormsForeground
             };
 
-            int numberOfLines = SendMessage(l.Handle.ToInt32(), 0xBA, 0, 0);
+            int numberOfLines = SendMessage(l.Handle, 0xBA, 0, 0);
             l.Height = ((l.Font.Height + 2) * numberOfLines) - 6;
 
             bool ScrollToBottom = OutputPanel.VerticalScroll.Value - (OutputPanel.VerticalScroll.Maximum - OutputPanel.Height + 20) > -20;
@@ -315,12 +315,12 @@ namespace RBX_Alt_Manager.Forms
             StartOnLaunch.Checked = AccountManager.AccountControl.Get<bool>("StartOnLaunch");
             PortNumber.Value = AccountManager.AccountControl.Get<decimal>("NexusPort");
             RelaunchDelayNumber.Value = AccountManager.AccountControl.Get<decimal>("RelaunchDelay");
-            LauncherDelayNumber.Value = AccountManager.AccountControl.Get<decimal>("LauncherDelayNumber");
+            LauncherDelayNumber.Value = Math.Max(Math.Min(AccountManager.AccountControl.Get<decimal>("LauncherDelay"), LauncherDelayNumber.Maximum), LauncherDelayNumber.Minimum);
             AutoMinimizeCB.Checked = AccountManager.AccountControl.Get<bool>("AutoMinimizeEnabled");
             AutoCloseCB.Checked = AccountManager.AccountControl.Get<bool>("AutoCloseEnabled");
             InternetCheckCB.Checked = AccountManager.AccountControl.Get<bool>("InternetCheck");
             UsePresenceCB.Checked = AccountManager.AccountControl.Get<bool>("UsePresence");
-            AutoMinIntervalNum.Value = Math.Max(Math.Min(AccountManager.AccountControl.Get<decimal>("AutoMinimizeInterval"), AutoMinIntervalNum.Minimum), AutoMinIntervalNum.Maximum);
+            AutoMinIntervalNum.Value = Math.Max(Math.Min(AccountManager.AccountControl.Get<decimal>("AutoMinimizeInterval"), AutoMinIntervalNum.Maximum), AutoMinIntervalNum.Minimum);
             AutoCloseIntervalNum.Value = Math.Max(Math.Min(AccountManager.AccountControl.Get<decimal>("AutoCloseInterval"), AutoCloseIntervalNum.Maximum), AutoCloseIntervalNum.Minimum);
             MaxInstancesNum.Value = Math.Max(Math.Min(AccountManager.AccountControl.Get<int>("MaxInstances"), MaxInstancesNum.Maximum), MaxInstancesNum.Minimum);
             AutoCloseType.SelectedIndex = AccountManager.AccountControl.Get<int>("AutoCloseType");
@@ -493,7 +493,7 @@ namespace RBX_Alt_Manager.Forms
                 {
                     if (account.AutoRelaunch)
                     {
-                        if ((UsePresence && account.LinkedAccount.Presence.userPresenceType != UserPresenceType.InGame) || (!UsePresence && (DateTime.Now - account.LastPing).TotalSeconds > account.RelaunchDelay))
+                        if ((UsePresence && account.LinkedAccount.Presence?.userPresenceType != UserPresenceType.InGame) || (!UsePresence && (DateTime.Now - account.LastPing).TotalSeconds > account.RelaunchDelay))
                         {
                             Program.Logger.Info($"Relaunch Delay: {RelaunchDelay} | Current Time: {DateTime.Now}");
                             Program.Logger.Info($"Relaunching {account.Username} to {account.PlaceId}, time since last relaunch: {(DateTime.Now - account.LastPing).TotalSeconds} seconds [{account.LastPing}] | Linked: {account.LinkedAccount}");
@@ -534,7 +534,11 @@ namespace RBX_Alt_Manager.Forms
         private void copyJobIdToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (AccountsView.SelectedObject != null)
-                Clipboard.SetText(((ControlledAccount)AccountsView.SelectedObject).InGameJobId);
+            {
+                string jobId = ((ControlledAccount)AccountsView.SelectedObject).InGameJobId;
+                if (!string.IsNullOrEmpty(jobId))
+                    Clipboard.SetText(jobId);
+            }
         }
 
         private void AllowExternalConnectionsCB_CheckedChanged(object sender, EventArgs e)
@@ -766,10 +770,10 @@ namespace RBX_Alt_Manager.Forms
 
         private void ClearDeadProcesses()
         {
-            foreach (Process process in Process.GetProcesses())
+            foreach (Process process in Process.GetProcessesByName("RobloxPlayerBeta"))
             {
-                if (process.ProcessName == "RobloxPlayerBeta" && Utilities.MD5(process.MainWindowTitle) == "6B19DD3A0E36191A937AB6FD96869A9D")
-                    process.Kill();
+                if (Utilities.MD5(process.MainWindowTitle) == "6B19DD3A0E36191A937AB6FD96869A9D")
+                    try { process.Kill(); } catch { }
             }
         }
 

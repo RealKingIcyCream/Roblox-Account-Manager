@@ -167,7 +167,7 @@ namespace Auto_Update
 #if !DEBUG
             catch (Exception x)
             {
-                ErorrOccured = true;
+                ErrorOccurred = true;
                 SetStatus("Error");
                 Invoke(new Action(() =>
                 {
@@ -184,7 +184,7 @@ namespace Auto_Update
             }
 #endif
 
-            if (ErorrOccured)
+            if (ErrorOccurred)
                 return;
 
             SetStatus("Done!");

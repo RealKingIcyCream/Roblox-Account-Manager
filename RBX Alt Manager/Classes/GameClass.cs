@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using RBX_Alt_Manager.Classes;
 using System;
 using System.Text.RegularExpressions;
@@ -18,7 +18,7 @@ namespace RBX_Alt_Manager
 
         public Game(long PlaceId, string Name)
         {
-            if (Batch.PlaceDetails.TryGetValue(PlaceId, out GameDetails ExistingDetails) && !string.IsNullOrEmpty(ImageUrl))
+            if (Batch.PlaceDetails.TryGetValue(PlaceId, out GameDetails ExistingDetails) && ExistingDetails != null)
                 Details = ExistingDetails;
             else
                 Task.Run(async () =>
@@ -31,7 +31,8 @@ namespace RBX_Alt_Manager
 
         public async Task WaitForDetails(int Delay = 60)
         {
-            while (Details == null)
+            var timeout = DateTime.Now.AddSeconds(30);
+            while (Details == null && DateTime.Now < timeout)
                 await Task.Delay(Delay);
 
             Callback?.Invoke();

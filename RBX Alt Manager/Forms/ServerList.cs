@@ -1,4 +1,4 @@
-﻿#pragma warning disable CS4014
+#pragma warning disable CS4014
 
 using BrightIdeasSoftware;
 using Newtonsoft.Json;
@@ -8,6 +8,7 @@ using RBX_Alt_Manager.Forms;
 using RBX_Alt_Manager.Properties;
 using RestSharp;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -139,7 +140,7 @@ namespace RBX_Alt_Manager
         private int Page = 0;
         private List<FavoriteGame> Favorites;
         private readonly string FavGamesFN = Path.Combine(Environment.CurrentDirectory, "FavoriteGames.json");
-        public static List<ServerData> servers = new List<ServerData>();
+        public static ConcurrentBag<ServerData> servers = new ConcurrentBag<ServerData>();
         public static long CurrentPlaceID = 0;
         private readonly object RLLock = new object();
         private readonly object SaveLock = new object();
@@ -219,7 +220,7 @@ namespace RBX_Alt_Manager
 
             CurrentPlaceID = PlaceId;
 
-            servers.Clear();
+            servers = new ConcurrentBag<ServerData>();
             ServerListView.Items.Clear();
             RestResponse response;
 
@@ -387,7 +388,7 @@ namespace RBX_Alt_Manager
 
         private void copyJobIdToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (ServerListView.SelectedItem != null)
+            if (ServerListView.SelectedItem != null && !string.IsNullOrEmpty(ServerListView.SelectedItem.Text))
                 Clipboard.SetText(ServerListView.SelectedItem.Text);
         }
 

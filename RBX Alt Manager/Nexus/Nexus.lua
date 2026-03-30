@@ -305,7 +305,10 @@ do -- Nexus
 end
 
 do -- Default Commands
+    -- WARNING: loadstring execution is intentional for Nexus remote control features.
+    -- Access to this command is protected by the WebSocket authentication token mechanism.
     Nexus:AddCommand('execute', function(Message)
+        if _G.Nexus_DisableExecute then return Nexus:Log("Execution disabled") end
         local Function, Error = loadstring(Message)
         
         if Function then
@@ -362,13 +365,13 @@ do -- Default Commands
     end)
 
     Nexus:AddCommand('performance', function(Message)
-        if _PERF then return end
+        if Nexus._PERF then return end
         
-        _PERF = true
-        _TARGETFPS = 8
+        Nexus._PERF = true
+        Nexus._TARGETFPS = 8
 
         if Message and tonumber(Message) then
-            _TARGETFPS = tonumber(Message)
+            Nexus._TARGETFPS = tonumber(Message)
         end
 
         local OldLevel = settings().Rendering.QualityLevel
@@ -387,10 +390,10 @@ do -- Default Commands
 
             RunService:Set3dRenderingEnabled(false)
             settings().Rendering.QualityLevel = 1
-            setfpscap(_TARGETFPS)
+            setfpscap(Nexus._TARGETFPS)
         end)
 
-        setfpscap(_TARGETFPS)
+        setfpscap(Nexus._TARGETFPS)
     end)
 end
 
