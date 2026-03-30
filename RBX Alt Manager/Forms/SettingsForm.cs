@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -44,6 +44,7 @@ namespace RBX_Alt_Manager.Forms
             AllowAECB.Checked = AccountManager.WebServer.Get<bool>("AllowAccountEditing");
             AllowExternalConnectionsCB.Checked = AccountManager.WebServer.Get<bool>("AllowExternalConnections");
             PasswordTextBox.Text = AccountManager.WebServer.Get("Password");
+            PasswordTextBox.UseSystemPasswordChar = true;
             PortNumber.Value = AccountManager.WebServer.Get<decimal>("WebServerPort");
 
             PresenceCB.Checked = AccountManager.General.Get<bool>("ShowPresence");
@@ -183,7 +184,7 @@ namespace RBX_Alt_Manager.Forms
             if (StartOnPCStartup.Checked)
                 StartupKey?.SetValue(Application.ProductName, Application.ExecutablePath);
             else
-                StartupKey?.DeleteValue(Application.ProductName);
+                try { StartupKey?.DeleteValue(Application.ProductName); } catch { }
         }
 
         private void EncryptionSelectionButton_Click(object sender, EventArgs e)
@@ -276,9 +277,8 @@ namespace RBX_Alt_Manager.Forms
         {
             if (!SettingsLoaded) return;
 
-            PasswordTextBox.Text = Regex.Replace(PasswordTextBox.Text, "[^0-9a-zA-Z ]", "");
-
             AccountManager.WebServer.Set("Password", PasswordTextBox.Text);
+            AccountManager.Instance.WSPassword = PasswordTextBox.Text;
             AccountManager.IniSettings.Save("RAMSettings.ini");
         }
 
@@ -338,7 +338,7 @@ namespace RBX_Alt_Manager.Forms
                     {
                         string FileName = Path.Combine(Environment.CurrentDirectory, "CustomClientAppSettings.json");
 
-                        File.Copy(CustomClientSettingsDialog.FileName, FileName);
+                        File.Copy(CustomClientSettingsDialog.FileName, FileName, true);
                         AccountManager.General.Set("CustomClientSettings", FileName);
                     }
                     else

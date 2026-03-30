@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -78,7 +78,7 @@ namespace RBX_Alt_Manager.Classes
             WaitForExitTimer = new System.Timers.Timer(500);
             WaitForExitTimer.Elapsed += (s, e) =>
             {
-                if (AccountManager.Watcher.Get<bool>(" ExitIfNoConnection") && AccountManager.Watcher.Get<double>("NoConnectionTimeout") is double Timeout && Timeout > 0 && !IsConnected && (DateTime.Now - DisconnectedTime).TotalSeconds is double Seconds && Seconds > Timeout)
+                if (AccountManager.Watcher.Get<bool>("ExitIfNoConnection") && AccountManager.Watcher.Get<double>("NoConnectionTimeout") is double Timeout && Timeout > 0 && !IsConnected && (DateTime.Now - DisconnectedTime).TotalSeconds is double Seconds && Seconds > Timeout)
                     KillProcess($"Lost connection for more than {Seconds} second(s)");
 
                 try
@@ -213,7 +213,7 @@ namespace RBX_Alt_Manager.Classes
             Program.Logger.Info($"Attempting to kill process {RbxProcess.Id}, reason: {Reason}");
             StreamDisposed = true;
 
-            LogStream.Dispose();
+            LogStream?.Dispose();
             RbxProcess.Kill();
 
             return true;
@@ -270,7 +270,7 @@ namespace RBX_Alt_Manager.Classes
             {
                 await Task.Delay(1500);
 
-                await Task.Run(WaitForLogPath);
+                await WaitForLogPath();
             }
         }
     }

@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RestSharp;
 using System;
@@ -58,14 +58,17 @@ namespace RBX_Alt_Manager.Classes
                 }
             }
 
-            PendingBatch.Add(new
+            lock (BatchTaskLock)
             {
-                requestId = $"{AssetId}:undefined:{Type}:{Size}:{Format}:regular",
-                type = Type,
-                targetId = AssetId,
-                size = Size,
-                format = Format ?? null
-            });
+                PendingBatch.Add(new
+                {
+                    requestId = $"{AssetId}:undefined:{Type}:{Size}:{Format}:regular",
+                    type = Type,
+                    targetId = AssetId,
+                    size = Size,
+                    format = Format ?? null
+                });
+            }
 
             return await CurrentBatchTask.ContinueWith(task =>
             {
@@ -95,7 +98,10 @@ namespace RBX_Alt_Manager.Classes
                 }
             }
 
-            PendingPlace.Add(PlaceId);
+            lock (PlaceTaskLock)
+            {
+                PendingPlace.Add(PlaceId);
+            }
 
             await CurrentPlaceTask;
 
@@ -113,12 +119,16 @@ namespace RBX_Alt_Manager.Classes
 
             JArray ReturnArray = new JArray();
 
-            while (PendingBatch.Count > 0)
+            while (true)
             {
                 List<object> Pending = new List<object>();
 
-                Pending.AddRange(PendingBatch.GetRange(0, Math.Min(PendingBatch.Count, 100)));
-                PendingBatch.RemoveRange(0, Math.Min(PendingBatch.Count, 100));
+                lock (BatchTaskLock)
+                {
+                    if (PendingBatch.Count == 0) break;
+                    Pending.AddRange(PendingBatch.GetRange(0, Math.Min(PendingBatch.Count, 100)));
+                    PendingBatch.RemoveRange(0, Math.Min(PendingBatch.Count, 100));
+                }
 
                 var Request = new RestRequest("v1/batch", Method.Post);
                 Request.AddJsonBody(Pending.ToArray());
@@ -142,15 +152,24 @@ namespace RBX_Alt_Manager.Classes
         {
             await Task.Delay(50);
 
+            var timeout = DateTime.Now.AddSeconds(30);
             while (AccountManager.LastValidAccount == null)
+            {
+                if (DateTime.Now > timeout)
+                    throw new TimeoutException("No valid account available for place details request.");
                 await Task.Delay(80);
+            }
 
-            while (PendingPlace.Count > 0)
+            while (true)
             {
                 List<long> Pending = new List<long>();
 
-                Pending.AddRange(PendingPlace.GetRange(0, Math.Min(PendingPlace.Count, 50)));
-                PendingPlace.RemoveRange(0, Math.Min(PendingPlace.Count, 50));
+                lock (PlaceTaskLock)
+                {
+                    if (PendingPlace.Count == 0) break;
+                    Pending.AddRange(PendingPlace.GetRange(0, Math.Min(PendingPlace.Count, 50)));
+                    PendingPlace.RemoveRange(0, Math.Min(PendingPlace.Count, 50));
+                }
 
                 foreach (long PlaceId in new List<long>(Pending))
                     if (PlaceDetails.ContainsKey(PlaceId))
@@ -160,7 +179,9 @@ namespace RBX_Alt_Manager.Classes
 
                 var Request = new RestRequest($"v1/games/multiget-place-details?placeIds={string.Join("&placeIds=", Pending.ToArray())}");
 
-                Request.AddCookie(".ROBLOSECURITY", AccountManager.LastValidAccount?.SecurityToken, "/", ".roblox.com");
+                if (AccountManager.LastValidAccount == null) continue;
+
+                Request.AddCookie(".ROBLOSECURITY", AccountManager.LastValidAccount.SecurityToken ?? string.Empty, "/", ".roblox.com");
 
                 RestResponse DetailsResponse = await GamesAPI.ExecuteAsync(Request);
 

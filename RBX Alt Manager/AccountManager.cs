@@ -69,7 +69,7 @@ namespace RBX_Alt_Manager
         public static string CurrentVersion;
         public OLVListItem SelectedAccountItem { get; private set; }
         private WebServer AltManagerWS;
-        private string WSPassword { get; set; }
+        public string WSPassword { get; set; }
         public System.Timers.Timer AutoCookieRefresh { get; private set; }
 
         public static IniFile IniSettings;
@@ -155,7 +155,8 @@ namespace RBX_Alt_Manager
             if (!WebServer.Exists("AllowGetAccounts")) WebServer.Set("AllowGetAccounts", "false");
             if (!WebServer.Exists("AllowLaunchAccount")) WebServer.Set("AllowLaunchAccount", "false");
             if (!WebServer.Exists("AllowAccountEditing")) WebServer.Set("AllowAccountEditing", "false");
-            if (!WebServer.Exists("Password")) WebServer.Set("Password", ""); else WSPassword = WebServer.Get("Password");
+            if (!WebServer.Exists("Password")) WebServer.Set("Password", "");
+            WSPassword = WebServer.Get("Password") ?? "";
             if (!WebServer.Exists("EveryRequestRequiresPassword")) WebServer.Set("EveryRequestRequiresPassword", "false");
             if (!WebServer.Exists("AllowExternalConnections")) WebServer.Set("AllowExternalConnections", "false");
 
@@ -267,6 +268,13 @@ namespace RBX_Alt_Manager
 
             if (Data.Length > 0)
             {
+                if (Data.Length < Cryptography.RAMHeader.Length)
+                {
+                    File.WriteAllBytes(SaveFilePath + ".corrupt", Data);
+                    MessageBox.Show("Account data file is corrupted (too short). A backup was saved.", "Roblox Account Manager", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                else
+                {
                 var Header = new ReadOnlySpan<byte>(Data, 0, Cryptography.RAMHeader.Length);
 
                 if (Header.SequenceEqual(Cryptography.RAMHeader))
@@ -292,21 +300,25 @@ namespace RBX_Alt_Manager
                 }
                 else
                     try { AccountsList = JsonConvert.DeserializeObject<List<Account>>(Encoding.UTF8.GetString(ProtectedData.Unprotect(Data, Entropy, DataProtectionScope.CurrentUser))); }
-                    catch (CryptographicException e)
+                    catch (CryptographicException)
                     {
-                        try { AccountsList = JsonConvert.DeserializeObject<List<Account>>(Encoding.UTF8.GetString(Data)); }
-                        catch
+                        try { AccountsList = JsonConvert.DeserializeObject<List<Account>>(Encoding.UTF8.GetString(ProtectedData.Unprotect(Data, Entropy, DataProtectionScope.LocalMachine))); }
+                        catch (CryptographicException e2)
                         {
-                            File.WriteAllBytes(SaveFilePath + ".bak", Data);
-
-                            MessageBox.Show($"Failed to load accounts!\nA backup file was created in case the data can be recovered.\n\n{e.Message}");
+                            try { AccountsList = JsonConvert.DeserializeObject<List<Account>>(Encoding.UTF8.GetString(Data)); }
+                            catch
+                            {
+                                File.WriteAllBytes(SaveFilePath + ".bak", Data);
+                                MessageBox.Show($"Failed to load accounts!\nA backup file was created in case the data can be recovered.\n\n{e2.Message}");
+                            }
                         }
                     }
+                } // end Data.Length guard
             }
 
             AccountsList ??= new List<Account>();
 
-            if (!EnteredPassword && AccountsList.Count == 0 && File.Exists($"{SaveFilePath}.backup") && File.ReadAllBytes($"{SaveFilePath}.backup") is byte[] BackupData && BackupData.Length > 0)
+            if (!EnteredPassword && AccountsList.Count == 0 && File.Exists($"{SaveFilePath}.backup") && File.ReadAllBytes($"{SaveFilePath}.backup") is byte[] BackupData && BackupData.Length >= Cryptography.RAMHeader.Length)
             {
                 var Header = new ReadOnlySpan<byte>(BackupData, 0, Cryptography.RAMHeader.Length);
 
@@ -336,8 +348,16 @@ namespace RBX_Alt_Manager
                     }
                     catch
                     {
+                        try
+                        {
+                            string Decoded = Encoding.UTF8.GetString(ProtectedData.Unprotect(BackupData, Entropy, DataProtectionScope.LocalMachine));
+                            AccountsList = JsonConvert.DeserializeObject<List<Account>>(Decoded);
+                        }
+                        catch
+                        {
                         try { AccountsList = JsonConvert.DeserializeObject<List<Account>>(Encoding.UTF8.GetString(BackupData)); }
                         catch { MessageBox.Show("Failed to load backup file!", "Roblox Account Manager", MessageBoxButtons.OKCancel, MessageBoxIcon.Error); }
+                        }
                     }
                 }
             }
@@ -357,7 +377,7 @@ namespace RBX_Alt_Manager
 
         public static void SaveAccounts(bool BypassRateLimit = false, bool BypassCountCheck = false)
         {
-            if ((!BypassRateLimit && (DateTime.Now - startTime).Seconds < 2) || (!BypassCountCheck && AccountsList.Count == 0)) return;
+            if ((!BypassRateLimit && (DateTime.Now - startTime).TotalSeconds < 2) || (!BypassCountCheck && AccountsList.Count == 0)) return;
 
             lock (saveLock)
             {
@@ -374,10 +394,12 @@ namespace RBX_Alt_Manager
                     File.WriteAllBytes(SaveFilePath, Cryptography.Encrypt(SaveData, ProtectedData.Unprotect(PasswordHash.ToArray(), Array.Empty<byte>(), DataProtectionScope.CurrentUser)));
                 else
                 {
+#if DEBUG
                     if (File.Exists(Path.Combine(Environment.CurrentDirectory, "NoEncryption.IUnderstandTheRisks.iautamor")))
                         File.WriteAllBytes(SaveFilePath, Encoding.UTF8.GetBytes(SaveData));
                     else
-                        File.WriteAllBytes(SaveFilePath, ProtectedData.Protect(Encoding.UTF8.GetBytes(SaveData), Entropy, DataProtectionScope.LocalMachine));
+#endif
+                        File.WriteAllBytes(SaveFilePath, ProtectedData.Protect(Encoding.UTF8.GetBytes(SaveData), Entropy, DataProtectionScope.CurrentUser));
                 }
             }
         }
@@ -697,7 +719,7 @@ namespace RBX_Alt_Manager
                     try
                     {
                         ServicePointManager.Expect100Continue = true;
-                        ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12 | SecurityProtocolType.Ssl3;
+                        ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
                         WebClient WC = new WebClient();
                         Assembly assembly = Assembly.GetExecutingAssembly();
@@ -708,15 +730,10 @@ namespace RBX_Alt_Manager
 
                         if (match.Success)
                         {
-                            string Current = fvi.FileVersion.TrimEnd('.', '0').Replace(".", string.Empty);
-                            string New = match.Groups[1].Value.TrimEnd('.', '0').Replace(".", string.Empty);
+                            string Current = fvi.FileVersion;
+                            string New = match.Groups[1].Value;
 
-                            if (Current.Length > New.Length)
-                                New = New.PadRight(Current.Length, '0');
-                            else if (New.Length > Current.Length)
-                                Current = Current.PadRight(New.Length, '0');
-
-                            if (double.TryParse(New, out double NV) && double.TryParse(Current, out double CV) && NV > CV)
+                            if (Version.TryParse(Current, out Version currentVer) && Version.TryParse(New, out Version newVer) && newVer > currentVer)
                             {
                                 bool ShouldUpdate = Utilities.YesNoPrompt("Roblox Account Manager", "An update is available", "Would you like to update now?");
 
@@ -725,21 +742,11 @@ namespace RBX_Alt_Manager
                                     File.WriteAllBytes(AFN, File.ReadAllBytes(Application.ExecutablePath));
                                     Process.Start(AFN, "-update");
                                     Environment.Exit(1);
-                                    //if (File.Exists(AFN))
-                                    //{
-                                    //    Process.Start(AFN, "skip");
-                                    //    Environment.Exit(1);
-                                    //}
-                                    //else
-                                    //{
-                                    //    MessageBox.Show("You do not have the auto updater downloaded, go to the github page and download the latest release.");
-                                    //    Process.Start("https://github.com/ic3w0lf22/Roblox-Account-Manager/releases");
-                                    //}
                                 }
                             }
                         }
                     }
-                    catch { }
+                    catch (Exception x) { Program.Logger.Error($"Update check failed: {x.Message}"); }
                 });
             }
 
@@ -773,13 +780,18 @@ namespace RBX_Alt_Manager
             }
             catch (Exception x) { MessageBox.Show($"Failed to start webserver!\n\n{x}", "Roblox Account Manager", MessageBoxButtons.OK, MessageBoxIcon.Error); }
 
-            Task.Run(() =>
+            Task.Run(async () =>
             {
-                WebClient WC = new WebClient();
-                string VersionJSON = WC.DownloadString("https://clientsettings.roblox.com/v1/client-version/WindowsPlayer");
+                try
+                {
+                    using var httpClient = new HttpClient();
+                    httpClient.DefaultRequestHeaders.Add("User-Agent", "RobloxAccountManager");
+                    string VersionJSON = await httpClient.GetStringAsync("https://clientsettings.roblox.com/v1/client-version/WindowsPlayer");
 
-                if (JObject.Parse(VersionJSON).TryGetValue("clientVersionUpload", out JToken token))
-                    CurrentVersion = token.Value<string>();
+                    if (JObject.Parse(VersionJSON).TryGetValue("clientVersionUpload", out JToken token))
+                        CurrentVersion = token.Value<string>();
+                }
+                catch (Exception x) { Program.Logger.Error($"Failed to get Roblox version: {x.Message}"); }
             });
 
             IniSettings.Save("RAMSettings.ini");
@@ -855,15 +867,19 @@ namespace RBX_Alt_Manager
         {
             RecentGames = new List<Game>();
 
-            if (File.Exists(RecentGamesFilePath))
+            try
             {
-                List<Game> Games = JsonConvert.DeserializeObject<List<Game>>(File.ReadAllText(RecentGamesFilePath));
+                if (File.Exists(RecentGamesFilePath))
+                {
+                    List<Game> Games = JsonConvert.DeserializeObject<List<Game>>(File.ReadAllText(RecentGamesFilePath));
 
-                RGForm.LoadGames(Games);
+                    RGForm.LoadGames(Games);
 
-                foreach (Game RG in Games)
-                    await AddRecentGame(RG, true);
+                    foreach (Game RG in Games)
+                        await AddRecentGame(RG, true);
+                }
             }
+            catch (Exception x) { Program.Logger.Error($"Failed to load recent games: {x.Message}"); }
         }
 
         private async Task AddRecentGame(Game RG, bool Loading = false)
@@ -872,13 +888,13 @@ namespace RBX_Alt_Manager
 
             RecentGames.RemoveAll(g => g?.Details?.placeId == RG.Details?.placeId);
 
+            RecentGames.Add(RG);
+
             while (RecentGames.Count > General.Get<int>("MaxRecentGames"))
             {
                 this.InvokeIfRequired(() => PlaceID.AutoCompleteCustomSource.Remove(RecentGames[0].Details?.filteredName));
                 RecentGames.RemoveAt(0);
             }
-
-            RecentGames.Add(RG);
 
             this.InvokeIfRequired(() => PlaceID.AutoCompleteCustomSource.Add(RG.Details.filteredName));
 
@@ -894,6 +910,20 @@ namespace RBX_Alt_Manager
         private readonly List<ServerData> AttemptedJoins = new List<ServerData>();
 
         private string WebServerResponse(object Message, bool Success) => JsonConvert.SerializeObject(new { Success, Message });
+
+        private static bool ConstantTimeEquals(string a, string b)
+        {
+            if (a == null || b == null) return false;
+
+            byte[] aBytes = System.Text.Encoding.UTF8.GetBytes(a);
+            byte[] bBytes = System.Text.Encoding.UTF8.GetBytes(b);
+
+            uint diff = (uint)aBytes.Length ^ (uint)bBytes.Length;
+            for (int i = 0; i < aBytes.Length && i < bBytes.Length; i++)
+                diff |= (uint)(aBytes[i] ^ bBytes[i]);
+
+            return diff == 0;
+        }
 
         private string SendResponse(HttpListenerContext Context)
         {
@@ -914,30 +944,32 @@ namespace RBX_Alt_Manager
 
             if (AbsolutePath == "/Running") return Reply("Roblox Account Manager is running", true, Raw: "true");
 
-            string Body = new StreamReader(request.InputStream).ReadToEnd();
+            string Body;
+            using (var bodyReader = new StreamReader(request.InputStream)) { Body = bodyReader.ReadToEnd(); }
             string Method = AbsolutePath.Substring(1);
             string Account = request.QueryString["Account"];
             string Password = request.QueryString["Password"];
 
-            if (WebServer.Get<bool>("EveryRequestRequiresPassword") && (WSPassword.Length < 6 || Password != WSPassword)) return Reply("Invalid Password, make sure your password contains 6 or more characters", false, 401, "Invalid Password");
+            if (WebServer.Get<bool>("EveryRequestRequiresPassword") && (string.IsNullOrEmpty(WSPassword) || WSPassword.Length < 6 || !ConstantTimeEquals(Password, WSPassword))) return Reply("Invalid Password, make sure your password contains 6 or more characters", false, 401, "Invalid Password");
 
-            if ((Method == "GetCookie" || Method == "GetAccounts" || Method == "LaunchAccount" || Method == "FollowUser") && ((WSPassword != null && WSPassword.Length < 6) || (Password != null && Password != WSPassword))) return Reply("Invalid Password, make sure your password contains 6 or more characters", false, 401, "Invalid Password");
+            if ((Method == "GetCookie" || Method == "GetAccounts" || Method == "GetAccountsJson" || Method == "LaunchAccount" || Method == "FollowUser" || Method == "ImportCookie") && !string.IsNullOrEmpty(WSPassword) && WSPassword.Length >= 6 && !ConstantTimeEquals(Password, WSPassword)) return Reply("Invalid Password, make sure your password contains 6 or more characters", false, 401, "Invalid Password");
 
             if (Method == "GetAccounts")
             {
                 if (!WebServer.Get<bool>("AllowGetAccounts")) return Reply("Method `GetAccounts` not allowed", false, 401, "Method not allowed");
 
-                string Names = "";
                 string GroupFilter = request.QueryString["Group"];
+                var names = new List<string>();
 
                 foreach (Account acc in AccountsList)
                 {
                     if (!string.IsNullOrEmpty(GroupFilter) && acc.Group != GroupFilter) continue;
 
-                    Names += acc.Username + ",";
+                    names.Add(acc.Username);
                 }
 
-                return Reply(Names.Remove(Names.Length - 1), true, Raw: Names.Remove(Names.Length - 1));
+                string Names = string.Join(",", names);
+                return Reply(Names, true, Raw: Names);
             }
 
             if (Method == "GetAccountsJson")
@@ -945,7 +977,7 @@ namespace RBX_Alt_Manager
                 if (!WebServer.Get<bool>("AllowGetAccounts")) return Reply("Method `GetAccountsJson` not allowed", false, 401, "Method not allowed");
 
                 string GroupFilter = request.QueryString["Group"];
-                bool ShowCookies = WSPassword.Length >= 6 && Password != WSPassword && request.QueryString["IncludeCookies"] == "true" && WebServer.Get<bool>("AllowGetCookie");
+                bool ShowCookies = !string.IsNullOrEmpty(WSPassword) && WSPassword.Length >= 6 && ConstantTimeEquals(Password, WSPassword) && request.QueryString["IncludeCookies"] == "true" && WebServer.Get<bool>("AllowGetCookie");
 
                 List<object> Objects = new List<object>();
 
@@ -974,6 +1006,8 @@ namespace RBX_Alt_Manager
 
             if (Method == "ImportCookie")
             {
+                if (!WebServer.Get<bool>("AllowAccountEditing")) return Reply("Method `ImportCookie` not allowed", false, 401, "Method not allowed");
+
                 Account New = AddAccount(request.QueryString["Cookie"]);
 
                 bool Success = New != null;
@@ -1054,7 +1088,8 @@ namespace RBX_Alt_Manager
 
             if (Method == "SetServer" && !string.IsNullOrEmpty(request.QueryString["PlaceId"]) && !string.IsNullOrEmpty(request.QueryString["JobId"]))
             {
-                string RSP = account.SetServer(Convert.ToInt64(request.QueryString["PlaceId"]), request.QueryString["JobId"], out bool Success);
+                if (!long.TryParse(request.QueryString["PlaceId"], out long SetServerPlaceId)) return Reply("Invalid PlaceId", false);
+                string RSP = account.SetServer(SetServerPlaceId, request.QueryString["JobId"], out bool Success);
 
                 return Reply(RSP, Success);
             }
@@ -1126,7 +1161,7 @@ namespace RBX_Alt_Manager
             }
             if (Method == "SetDescription" && !string.IsNullOrEmpty(Body))
             {
-                if (!WebServer.Get<bool>("AllowAccountEditing")) Reply("Method `SetDescription` not allowed", false, Raw: "Method not allowed");
+                if (!WebServer.Get<bool>("AllowAccountEditing")) return Reply("Method `SetDescription` not allowed", false, Raw: "Method not allowed");
 
                 account.Description = Body;
                 UpdateAccountView(account);
@@ -1320,7 +1355,7 @@ namespace RBX_Alt_Manager
                         MessageBox.Show("Roblox Account Manager will now close since it can't delete the folder while it's in use.", "", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                         if (Directory.GetFiles(AccountBrowser.Fetcher.DownloadsFolder).Length <= 1 && Directory.GetDirectories(AccountBrowser.Fetcher.DownloadsFolder).Length <= 1)
-                            Process.Start("cmd.exe", $"/c rmdir /s /q \"{AccountBrowser.Fetcher.DownloadsFolder}\"");
+                        try { Directory.Delete(AccountBrowser.Fetcher.DownloadsFolder, true); } catch { }
                         else
                             Process.Start("explorer.exe", "/select, " + AccountBrowser.Fetcher.DownloadsFolder);
 
@@ -1484,22 +1519,26 @@ namespace RBX_Alt_Manager
 
             bool LaunchMultiple = AccountsView.SelectedObjects.Count > 1;
 
-            new Thread(async () => // finally fixing an ancient bug in a dumb way, p.s. i do not condone this.
+            Task.Run(async () =>
             {
-                if (LaunchMultiple)
+                try
                 {
-                    LauncherToken = new CancellationTokenSource();
+                    if (LaunchMultiple)
+                    {
+                        LauncherToken = new CancellationTokenSource();
 
-                    await LaunchAccounts(SelectedAccounts, PlaceId, VIPServer ? JobID.Text.Substring(4) : JobID.Text, false, VIPServer);
-                }
-                else if (SelectedAccount != null)
-                {
-                    string res = await SelectedAccount.JoinServer(PlaceId, VIPServer ? JobID.Text.Substring(4) : JobID.Text, false, VIPServer);
+                        await LaunchAccounts(SelectedAccounts, PlaceId, VIPServer ? JobID.Text.Substring(4) : JobID.Text, false, VIPServer);
+                    }
+                    else if (SelectedAccount != null)
+                    {
+                        string res = await SelectedAccount.JoinServer(PlaceId, VIPServer ? JobID.Text.Substring(4) : JobID.Text, false, VIPServer);
 
-                    if (!res.Contains("Success"))
-                        MessageBox.Show(res);
+                        if (!res.Contains("Success"))
+                            MessageBox.Show(res);
+                    }
                 }
-            }).Start();
+                catch (Exception x) { Program.Logger.Error($"Join server failed: {x.Message}"); }
+            });
         }
 
         private async void Follow_Click(object sender, EventArgs e)
@@ -1869,7 +1908,7 @@ namespace RBX_Alt_Manager
                     if (account.Fields.ContainsKey("SavedPlaceId") || account.Fields.ContainsKey("SavedJobId"))
                         HasSaved.Add(account);
 
-                if (HasSaved.Count > 0 && MessageBox.Show($"Are you sure you want to remove {HasSaved.Count} saved Place Ids?", "Roblox Account Manager", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.OK)
+                if (HasSaved.Count > 0 && MessageBox.Show($"Are you sure you want to remove {HasSaved.Count} saved Place Ids?", "Roblox Account Manager", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
                     foreach (Account account in HasSaved)
                     {
                         account.RemoveField("SavedPlaceId");
@@ -2133,7 +2172,7 @@ namespace RBX_Alt_Manager
 
         private void AccountsView_Scroll(object sender, ScrollEventArgs e)
         {
-            if (PresenceCancellationToken != null || !General.Get<bool>("ShowPresence"))
+            if (PresenceCancellationToken != null)
                 PresenceCancellationToken.Cancel();
 
             PresenceCancellationToken = new CancellationTokenSource();

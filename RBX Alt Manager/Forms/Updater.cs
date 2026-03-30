@@ -1,4 +1,4 @@
-﻿using IWshRuntimeLibrary;
+using IWshRuntimeLibrary;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -89,7 +89,8 @@ namespace Auto_Update
 
                 string DownloadUrl = match.Groups[1].Value;
 
-                TotalDownloadSize = (await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, DownloadUrl))).Content.Headers.ContentLength.Value;
+                var headResponse = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, DownloadUrl));
+                TotalDownloadSize = headResponse.Content.Headers.ContentLength.HasValue ? headResponse.Content.Headers.ContentLength.Value : 0;
 
                 Progress<float> progress = new Progress<float>(progressChanged);
 
@@ -103,7 +104,7 @@ namespace Auto_Update
 
         private void Extract()
         {
-            bool ErorrOccured = false;
+            bool ErrorOccurred = false;
 
             try
             {
@@ -131,8 +132,8 @@ namespace Auto_Update
                     if (FN == Application.ExecutablePath) FN = Path.Combine(Environment.CurrentDirectory, "Test.exe");
 #endif
 
-                    if (File.Exists(Path.Combine(Environment.CurrentDirectory, FN)))
-                        File.Delete(Path.Combine(Environment.CurrentDirectory, FN));
+                    if (File.Exists(FN))
+                        File.Delete(FN);
                 }
 
                 foreach (string s in Directory.GetDirectories(UpdatePath))

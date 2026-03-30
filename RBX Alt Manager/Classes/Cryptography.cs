@@ -1,4 +1,4 @@
-﻿using Sodium;
+using Sodium;
 using System;
 using System.IO;
 using System.Linq;
@@ -18,8 +18,8 @@ namespace RBX_Alt_Manager.Classes
             var Nonce = SecretBox.GenerateNonce();
             var Encrypted = SecretBox.Create(Content, Nonce, DerivedKey);
 
-            var OutputStream = new MemoryStream();
-            var OutputWriter = new BinaryWriter(OutputStream);
+            using var OutputStream = new MemoryStream();
+            using var OutputWriter = new BinaryWriter(OutputStream);
 
             OutputWriter.Write(RAMHeader);
 
@@ -32,14 +32,14 @@ namespace RBX_Alt_Manager.Classes
 
         public static byte[] Decrypt(byte[] Encrypted, byte[] Password)
         {
-            var InputStream = new MemoryStream(Encrypted);
-            var InputReader = new BinaryReader(InputStream);
+            using var InputStream = new MemoryStream(Encrypted);
+            using var InputReader = new BinaryReader(InputStream);
 
             if (!RAMHeader.SequenceEqual(InputReader.ReadBytes(RAMHeader.Length))) throw new ArgumentNullException("Missing RAMHeader");
 
             var Salt = InputReader.ReadBytes(16);
             var Nonce = InputReader.ReadBytes(24);
-            var CipherText = InputReader.ReadBytes(Encrypted.Length);
+            var CipherText = InputReader.ReadBytes(Encrypted.Length - RAMHeader.Length - 16 - 24);
 
             var derivedKey = PasswordHash.ArgonHashBinary(Password, Salt, PasswordHash.StrengthArgon.Moderate, 32);
 

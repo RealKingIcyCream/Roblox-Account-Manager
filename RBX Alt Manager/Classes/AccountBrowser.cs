@@ -1,4 +1,4 @@
-﻿using CefSharp;
+using CefSharp;
 using CefSharp.WinForms;
 using Newtonsoft.Json.Linq;
 using PuppeteerExtraSharp;
@@ -57,11 +57,11 @@ namespace RBX_Alt_Manager.Classes
             if (string.IsNullOrEmpty(Url)) Url = "https://roblox.com/";
 
             if (Position != null && Index >= 0 && ScreenGrid != null && ScreenGrid.Count > 0)
-                Position = ScreenGrid[Index % (ScreenGrid.Count - 1)];
+                Position = ScreenGrid[Index % ScreenGrid.Count];
             else
                 Position = new Vector2(Screen.PrimaryScreen.WorkingArea.Width / 2 - (Size.X / 2), Screen.PrimaryScreen.WorkingArea.Height / 2 - (Size.Y / 2));
 
-            List<string> Args = new List<string>(Arguments ?? new string[] { "--disable-web-security" });
+            List<string> Args = new List<string>(Arguments ?? Array.Empty<string>());
 
             string ExtensionPath = Path.Combine(Environment.CurrentDirectory, "extension");
             string ConfigPath = Path.Combine(Environment.CurrentDirectory, "BrowserConfig.json");
@@ -87,7 +87,7 @@ namespace RBX_Alt_Manager.Classes
                 int Limit = AccountManager.General.Exists("ProxyTestLimit") ? AccountManager.General.Get<int>("ProxyTestLimit") : 10;
                 List<string> Proxies = File.ReadAllLines(ProxiesPath).ToList();
 
-                Proxies.OrderBy(x => Rng.Next());
+                Proxies = Proxies.OrderBy(x => Rng.Next()).ToList();
 
                 for (int i = 0; i < Limit; i++)
                 {
@@ -138,7 +138,7 @@ namespace RBX_Alt_Manager.Classes
                 }
             }
 
-            var Options = new LaunchOptions { Headless = false, DefaultViewport = null, Args = Args.ToArray(), IgnoreHTTPSErrors = true };
+            var Options = new LaunchOptions { Headless = false, DefaultViewport = null, Args = Args.ToArray(), IgnoreHTTPSErrors = false };
 
             await Fetcher.DownloadAsync(BrowserFetcher.DefaultChromiumRevision);
 
@@ -219,7 +219,7 @@ namespace RBX_Alt_Manager.Classes
                     {
                         await Task.Delay(500);
 
-                        if (e.Frame.QuerySelectorAsync("#app") == null && e.Frame.QuerySelectorAsync("#root") == null) continue;
+                        if (await e.Frame.QuerySelectorAsync("#app") == null && await e.Frame.QuerySelectorAsync("#root") == null) continue;
 
                         try // :|
                         {
